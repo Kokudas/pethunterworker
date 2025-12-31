@@ -1,7 +1,8 @@
 {
-  "name": "sa-pet-alarm",
+  "name": "pethunterworker",
   "private": true,
   "devDependencies": {
     "wrangler": "4.54.0"
   }
 }
+
