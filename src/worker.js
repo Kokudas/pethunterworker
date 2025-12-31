@@ -93,9 +93,28 @@ async function handleInteractions(req, env) {
     const userId = interaction.member?.user?.id || interaction.user?.id;
     const guildId = interaction.guild_id;
 
-    if (guildId !== env.GUILD_ID) {
-      return json({ type: 4, data: { content: "이 서버에서만 사용 가능해요.", flags: 64 } });
+const allowedGuild = String(env.GUILD_ID || "").trim();
+
+if (!allowedGuild) {
+  return json({
+    type: 4,
+    data: { flags: 64, content: "설정 오류: Worker에 GUILD_ID가 비어있어요." }
+  });
+}
+
+if (String(guildId) !== allowedGuild) {
+  return json({
+    type: 4,
+    data: {
+      flags: 64,
+      content:
+        `이 서버에서만 사용 가능해요.\n` +
+        `- 현재 guild_id: ${guildId}\n` +
+        `- 허용 GUILD_ID: ${allowedGuild}`
     }
+  });
+}
+
 
     if (name === "link") {
       const ign = (interaction.data?.options?.find(o => o.name === "ign")?.value || "").trim();
@@ -184,3 +203,4 @@ function base64url(bytes) {
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
+
