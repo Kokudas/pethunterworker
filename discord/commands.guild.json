@@ -1,0 +1,11 @@
+[
+  {
+    "name": "link",
+    "description": "인게임 닉네임 연동",
+    "type": 1,
+    "options": [
+      { "name": "ign", "description": "인게임 닉네임(정확히)", "type": 3, "required": true }
+    ]
+  },
+  { "name": "unlink", "description": "연동 해제", "type": 1 }
+]
