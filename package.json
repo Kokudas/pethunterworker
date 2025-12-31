@@ -1,0 +1,7 @@
+{
+  "name": "sa-pet-alarm",
+  "private": true,
+  "devDependencies": {
+    "wrangler": "4.54.0"
+  }
+}
