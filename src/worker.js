@@ -92,38 +92,21 @@ async function handleAlarm(req, env) {
   const keyInfo = JSON.parse(keyInfoRaw); // { userId, ign, guildId, createdAt }
   const body = await req.json().catch(() => ({}));
 
-/* -------------------- /alarm -------------------- */
-async function handleAlarm(req, env) {
-  if (req.method === "OPTIONS") return new Response("", { status: 204, headers: cors() });
-  if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: cors() });
-
-  const clientKey = req.headers.get("X-Client-Key") || "";
-  if (!clientKey) return new Response("Missing X-Client-Key", { status: 401, headers: cors() });
-
-  const keyInfoRaw = await env.SA_KV.get(`key:${clientKey}`);
-  if (!keyInfoRaw) return new Response("Invalid key", { status: 401, headers: cors() });
-
-  const keyInfo = JSON.parse(keyInfoRaw); // { userId, ign, guildId, createdAt }
-  const body = await req.json().catch(() => ({}));
-
   const event = String(body.event || "").trim();
-  // 지원 이벤트: bag_full, catch_success
   if (event !== "bag_full" && event !== "catch_success") {
     return new Response("Ignored", { status: 204, headers: cors() });
   }
 
-  // 허용 서버 체크 (키가 특정 guildId에 묶여있음)
   if (!isAllowedGuild(env, keyInfo.guildId)) {
     return json({ ok: false, reason: "guild_not_allowed" }, 200, cors());
   }
 
-  // 이벤트별 쿨다운 (서로 방해하지 않게 분리)
+  // 이벤트별 쿨다운(서로 방해하지 않게 분리)
   const now = Date.now();
   const cooldownKey = `cooldown:${event}:${clientKey}`;
   const lastRaw = await env.SA_KV.get(cooldownKey);
   const last = lastRaw ? Number(lastRaw) : 0;
   if (now - last < 60_000) return new Response("Cooldown", { status: 204, headers: cors() });
-
   await env.SA_KV.put(cooldownKey, String(now), { expirationTtl: 120 });
 
   const channelId = await getGuildChannelId(env, keyInfo.guildId);
@@ -139,20 +122,18 @@ async function handleAlarm(req, env) {
     content = `${mention} ⚠️ **가방 [0]칸 감지!** (인게임: ${ign})${file}`;
   } else {
     // catch_success
-    // body.nick: 로그에 찍힌 플레이어 닉(예: "사탄")
-    // body.pet:  "푸푸"
-    // body.plus: 1~4 등(없을 수 있음)
-    // body.grade: "seok" | "above"
-    const hunter = (body.nick || ign || "알수없음").toString();
-    const pet = (body.pet || "").toString();
-    const plusNum = Number(body.plus);
-    const plusTxt = Number.isFinite(plusNum) ? ` +${plusNum}` : "";
+    const hunter = String(body.nick || ign || "알수없음").trim();
+    const pet = String(body.pet || "").trim();
+
+    // +1~+4 가변: 숫자면 표시, 없으면 생략
+    const plusNum = (body.plus === null || body.plus === undefined) ? NaN : Number(body.plus);
+    const plusTxt = Number.isFinite(plusNum) ? `, +${plusNum}` : "";
+
     const gradeTxt = body.grade === "above" ? "정석 이상" : "정석";
 
-    // 메시지는 취향대로 더 짧게/길게 바꿔도 됨
     content =
-      `${mention} 🎉 **정석 포획!** ` +
-      `(등급: ${gradeTxt}, 펫: ${pet}${plusTxt}, 플레이어: ${hunter}, 연동닉: ${ign})${file}`;
+      `${mention} 🎉 **정석 이상의 펫을 잡았습니다!** ` +
+      `(등급: ${gradeTxt}, 펫: ${pet || "?"}${plusTxt}, 플레이어: ${hunter}, 연동닉: ${ign})${file}`;
   }
 
   const r = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
@@ -170,45 +151,6 @@ async function handleAlarm(req, env) {
   }
 
   return json({ ok: true, channelId, event }, 200, cors());
-}
-
-
-  // 허용 서버 체크 (키가 특정 guildId에 묶여있음)
-  if (!isAllowedGuild(env, keyInfo.guildId)) {
-    return json({ ok: false, reason: "guild_not_allowed" }, 200, cors());
-  }
-
-  // 서버측 쿨다운(기본 60초)
-  const now = Date.now();
-  const lastRaw = await env.SA_KV.get(`cooldown:${clientKey}`);
-  const last = lastRaw ? Number(lastRaw) : 0;
-  if (now - last < 60_000) return new Response("Cooldown", { status: 204, headers: cors() });
-
-  await env.SA_KV.put(`cooldown:${clientKey}`, String(now), { expirationTtl: 120 });
-
-  const channelId = await getGuildChannelId(env, keyInfo.guildId);
-  if (!channelId) return json({ ok: false, reason: "channel_not_configured" }, 200, cors());
-
-  const mention = `<@${keyInfo.userId}>`;
-  const ign = keyInfo.ign || body.ign || "알수없음";
-  const file = body.file ? ` (파일: ${body.file})` : "";
-  const content = `${mention} ⚠️ **가방 [0]칸 감지!** (인게임: ${ign})${file}`;
-
-  const r = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ content }),
-  });
-
-  if (!r.ok) {
-    const t = await r.text().catch(() => "");
-    return json({ ok: false, status: r.status, detail: t.slice(0, 200) }, 200, cors());
-  }
-
-  return json({ ok: true, channelId }, 200, cors());
 }
 
 /* -------------------- /interactions -------------------- */
@@ -261,19 +203,21 @@ async function handleInteractions(req, env) {
       });
     }
 
-    if (name === "unlink") {
-      const oldKey = await env.SA_KV.get(`user:${guildId}:${userId}`);
-      if (oldKey) {
-// 레거시 + 신규 쿨다운 키 정리
-await env.SA_KV.delete(`cooldown:${oldKey}`);
-await env.SA_KV.delete(`cooldown:bag_full:${oldKey}`);
-await env.SA_KV.delete(`cooldown:catch_success:${oldKey}`);
+if (name === "unlink") {
+  const oldKey = await env.SA_KV.get(`user:${guildId}:${userId}`);
+  if (oldKey) {
+    await env.SA_KV.delete(`key:${oldKey}`);
 
-        await env.SA_KV.delete(`cooldown:${oldKey}`);
-        await env.SA_KV.delete(`user:${guildId}:${userId}`);
-      }
-      return json({ type: 4, data: { flags: 64, content: "🧹 연동 해제 완료!" } });
-    }
+    // 레거시 + 신규 쿨다운 키 정리
+    await env.SA_KV.delete(`cooldown:${oldKey}`); // 예전 키(있으면)
+    await env.SA_KV.delete(`cooldown:bag_full:${oldKey}`);
+    await env.SA_KV.delete(`cooldown:catch_success:${oldKey}`);
+
+    await env.SA_KV.delete(`user:${guildId}:${userId}`);
+  }
+  return json({ type: 4, data: { flags: 64, content: "🧹 연동 해제 완료!" } });
+}
+
 
     if (name === "setchannel") {
       if (!hasManageGuildOrAdmin(interaction)) {
@@ -349,4 +293,5 @@ function base64url(bytes) {
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
+
 
