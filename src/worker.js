@@ -2,17 +2,11 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
 
-    if (url.pathname === "/health") {
-      return new Response("ok", { status: 200 });
-    }
+    if (url.pathname === "/health") return new Response("ok", { status: 200 });
 
-    if (url.pathname === "/alarm") {
-      return handleAlarm(req, env);
-    }
+    if (url.pathname === "/alarm") return handleAlarm(req, env);
 
-    if (url.pathname === "/interactions") {
-      return handleInteractions(req, env);
-    }
+    if (url.pathname === "/interactions") return handleInteractions(req, env);
 
     return new Response("Not found", { status: 404 });
   },
@@ -33,7 +27,8 @@ function json(data, status = 200, headers = {}) {
   });
 }
 
-// -------------------- /alarm --------------------
+/* -------------------- /alarm -------------------- */
+/** 웹(정적)에서 [0]칸 감지 시 호출 -> 디스코드 채널로 봇 메시지 전송 */
 async function handleAlarm(req, env) {
   if (req.method === "OPTIONS") return new Response("", { status: 204, headers: cors() });
   if (req.method !== "POST") return new Response("Method Not Allowed", { status: 405, headers: cors() });
@@ -58,14 +53,15 @@ async function handleAlarm(req, env) {
   await env.SA_KV.put(`cooldown:${clientKey}`, String(now), { expirationTtl: 120 });
 
   const mention = `<@${keyInfo.userId}>`;
-  const ign = keyInfo.ign || "알수없음";
+  const ign = keyInfo.ign || body.ign || "알수없음";
   const file = body.file ? ` (파일: ${body.file})` : "";
   const content = `${mention} ⚠️ **가방 [0]칸 감지!** (인게임: ${ign})${file}`;
 
+  // 채널 메시지 전송: POST /channels/{channel.id}/messages :contentReference[oaicite:3]{index=3}
   const r = await fetch(`https://discord.com/api/v10/channels/${env.CHANNEL_ID}/messages`, {
     method: "POST",
     headers: {
-      Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+      Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`, // 봇 토큰 인증 :contentReference[oaicite:4]{index=4}
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ content }),
@@ -78,14 +74,15 @@ async function handleAlarm(req, env) {
   return json({ ok: true }, 200, cors());
 }
 
-// -------------------- /interactions --------------------
+/* -------------------- /interactions -------------------- */
+/** Discord 슬래시커맨드용 endpoint */
 async function handleInteractions(req, env) {
   const ok = await verifyDiscordRequest(req, env);
-  if (!ok) return new Response("Invalid signature", { status: 401 }); // Discord 요구사항: 실패 시 401 :contentReference[oaicite:6]{index=6}
+  if (!ok) return new Response("Invalid signature", { status: 401 }); // Discord는 서명 검증 실패 시 거부 :contentReference[oaicite:5]{index=5}
 
   const interaction = await req.json();
 
-  // Ping -> Pong
+  // Discord가 Endpoint URL 등록/상태 확인용으로 PING(type:1)을 보냄 -> PONG(type:1) 응답 :contentReference[oaicite:6]{index=6}
   if (interaction.type === 1) {
     return json({ type: 1 });
   }
@@ -110,15 +107,14 @@ async function handleInteractions(req, env) {
       await env.SA_KV.put(`key:${clientKey}`, JSON.stringify(keyInfo));
       await env.SA_KV.put(`user:${guildId}:${userId}`, clientKey);
 
-      // 응답은 본인만 보이게(ephemeral): flags=64 :contentReference[oaicite:7]{index=7}
       return json({
         type: 4,
         data: {
-          flags: 64,
+          flags: 64, // ephemeral(본인만 보기)
           content:
             `✅ 연동 완료!\n` +
             `- 인게임 닉: **${ign}**\n` +
-            `- 웹페이지에서 연동키로 이 값을 사용:\n` +
+            `- 웹페이지 연동키:\n` +
             `\`${clientKey}\`\n\n` +
             `※ 이 키는 절대 공유하지 마세요.`,
         },
@@ -141,7 +137,7 @@ async function handleInteractions(req, env) {
   return json({ type: 4, data: { flags: 64, content: "지원하지 않는 타입" } });
 }
 
-// Discord는 요청에 서명 헤더를 붙임(X-Signature-Ed25519, X-Signature-Timestamp) :contentReference[oaicite:8]{index=8}
+/** Discord는 x-signature-ed25519 / x-signature-timestamp 헤더로 서명 검증을 요구함 :contentReference[oaicite:7]{index=7} */
 async function verifyDiscordRequest(req, env) {
   const signatureHex = req.headers.get("x-signature-ed25519");
   const timestamp = req.headers.get("x-signature-timestamp");
@@ -156,7 +152,7 @@ async function verifyDiscordRequest(req, env) {
   message.set(tsBytes, 0);
   message.set(bodyBytes, tsBytes.length);
 
-  // Workers에서 Ed25519 검증: NODE-ED25519 사용 :contentReference[oaicite:9]{index=9}
+  // Cloudflare Workers WebCrypto: NODE-ED25519 알고리즘 지원 :contentReference[oaicite:8]{index=8}
   const publicKeyBytes = hexToBytes(env.DISCORD_PUBLIC_KEY);
   const signatureBytes = hexToBytes(signatureHex);
 
