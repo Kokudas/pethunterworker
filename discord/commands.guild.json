@@ -7,5 +7,14 @@
       { "name": "ign", "description": "인게임 닉네임(정확히)", "type": 3, "required": true }
     ]
   },
-  { "name": "unlink", "description": "연동 해제", "type": 1 }
+  { "name": "unlink", "description": "연동 해제", "type": 1 },
+  {
+    "name": "setchannel",
+    "description": "이 서버의 알림 채널 설정(관리자)",
+    "type": 1,
+    "options": [
+      { "name": "channel", "description": "알림을 받을 채널", "type": 7, "required": true }
+    ]
+  },
+  { "name": "showconfig", "description": "이 서버의 알림 채널 확인", "type": 1 }
 ]
