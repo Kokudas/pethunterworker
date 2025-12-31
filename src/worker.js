@@ -106,7 +106,8 @@ async function handleAlarm(req, env) {
   const cooldownKey = `cooldown:${event}:${clientKey}`;
   const lastRaw = await env.SA_KV.get(cooldownKey);
   const last = lastRaw ? Number(lastRaw) : 0;
-  if (now - last < 60_000) return new Response("Cooldown", { status: 204, headers: cors() });
+const cooldownMs = (event === "catch_success") ? 5_000 : 60_000;
+if (now - last < cooldownMs) return new Response("Cooldown", { status: 204, headers: cors() });
   await env.SA_KV.put(cooldownKey, String(now), { expirationTtl: 120 });
 
   const channelId = await getGuildChannelId(env, keyInfo.guildId);
@@ -293,5 +294,6 @@ function base64url(bytes) {
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
 }
+
 
 
